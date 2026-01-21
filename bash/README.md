@@ -18,7 +18,7 @@ You have to install the following packages:
 [~]>$ git clone https://github.com/MortezaBashsiz/dnsScanner.git
 ```
 
-### 2. Change directory and make scripts executable
+### 2. Change directory and make them executable
 
 ```shell
 [~]>$ cd dnsScanner/bash
