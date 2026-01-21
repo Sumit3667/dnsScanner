@@ -4,4 +4,3 @@ This project scans large IP ranges and writes a result file containing IPs that 
 ## Bash
 
 See `bash/` for the Bash implementation, usage, and requirements.
-
