@@ -8,8 +8,8 @@ textual>=0.47.0
 aiodns>=3.1.0
 pycares>=4.3.0
 
-# HTTP Client for Slipstream Proxy Testing
-httpx>=0.25.0
+# HTTP Client for Slipstream Proxy Testing (with SOCKS5 support)
+httpx[socks]>=0.25.0
 
 # Fast JSON Serialization
 orjson>=3.9.0

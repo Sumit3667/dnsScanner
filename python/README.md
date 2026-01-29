@@ -2,7 +2,7 @@
 
 A modern, high-performance DNS scanner with a beautiful Terminal User Interface (TUI) built with Textual. This tool can scan millions of IP addresses to find working DNS servers with optional Slipstream proxy testing and automatic multi-platform client download.
 
-![Python](https://img.shields.io/badge/python-3.13+-blue.svg)
+![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 
@@ -27,7 +27,7 @@ A modern, high-performance DNS scanner with a beautiful Terminal User Interface 
 ## 📋 Requirements
 
 ### Python Version
-- Python 3.8 or higher
+- Python 3.11 or higher
 
 ### Dependencies
 
@@ -35,7 +35,7 @@ A modern, high-performance DNS scanner with a beautiful Terminal User Interface 
 # Core dependencies
 textual>=0.47.0       # TUI framework
 aiodns>=3.1.0         # Async DNS resolver
-httpx>=0.25.0         # HTTP client for proxy testing and downloads
+httpx[socks]>=0.25.0  # HTTP client with SOCKS5 support for proxy testing
 orjson>=3.9.0         # Fast JSON serialization
 loguru>=0.7.0         # Advanced logging
 pyperclip>=1.8.0      # Clipboard support
@@ -86,17 +86,29 @@ pip install -r requirements.txt
 
 #### Option C: Using pip directly
 ```bash
-pip install textual aiodns httpx orjson loguru pyperclip
+pip install textual aiodns httpx[socks] orjson loguru pyperclip
 ```
 
-#### Option D: Using conda
+#### Option D: Using Runflare Mirror (For Servers with Limited Access)
+
+If you're on a server with restricted access to PyPI, use [Runflare](https://runflare.com/) mirror:
+
+```bash
+# Using Runflare as pip index
+pip install -r requirements.txt -i https://pip.runflare.com/simple/ --trusted-host pip.runflare.com
+
+# Or install directly
+pip install textual aiodns httpx[socks] orjson loguru pyperclip -i https://pip.runflare.com/simple/ --trusted-host pip.runflare.com
+```
+
+#### Option E: Using conda
 ```bash
 conda create -n dnsscanner python=3.11
 conda activate dnsscanner
 pip install -r requirements.txt
 ```
 
-#### Option E: Using uv with virtual environment
+#### Option F: Using uv with virtual environment
 ```bash
 # Create and activate venv with uv
 uv venv
