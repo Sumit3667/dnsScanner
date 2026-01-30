@@ -28,8 +28,8 @@ from textual.reactive import reactive
 from textual.widgets import Button, DataTable, Footer, Header, Static, RichLog, Input, Label, Checkbox, Select, DirectoryTree
 
 # Configure logging (disabled by default)
-logger.remove()  # Remove default handler to disable logging
-# Uncomment the line below to enable file logging
+logger.remove()  # Remove default handler to disable all logging
+# Uncomment below to enable file logging for debugging
 # logger.add(
 #     "logs/dnsscanner_{time}.log",
 #     rotation="50 MB",
@@ -624,6 +624,9 @@ class DNSScannerTUI(App):
         self.slipstream_semaphore: asyncio.Semaphore = None  # Will be created in async context
         self.pending_slipstream_tests: deque = deque()  # Queue for pending tests
         self.slipstream_tasks: set = set()  # Track running slipstream tasks
+        self.active_scan_tasks: list = []  # Track active DNS scan tasks for cleanup
+        self._shutdown_event: asyncio.Event = None  # Signal for graceful shutdown
+        self.slipstream_processes: list = []  # Track all slipstream processes for cleanup
 
     def compose(self) -> ComposeResult:
         """Create child widgets."""
@@ -709,6 +712,36 @@ class DNSScannerTUI(App):
         except Exception:
             pass
 
+    def action_quit(self) -> None:
+        """Immediately force quit the application."""
+        # Kill all slipstream processes first
+        for process in self.slipstream_processes:
+            try:
+                process.kill()
+            except Exception:
+                pass
+        
+        # Cancel all active tasks
+        for task in self.active_scan_tasks:
+            try:
+                task.cancel()
+            except Exception:
+                pass
+        
+        for task in self.slipstream_tasks:
+            try:
+                task.cancel()
+            except Exception:
+                pass
+        
+        # Clear task lists
+        self.active_scan_tasks.clear()
+        self.slipstream_tasks.clear()
+        self.slipstream_processes.clear()
+        
+        # Use Textual's proper exit to restore terminal
+        self.exit()
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button clicks."""
         if event.button.id == "start-scan-btn":
@@ -718,7 +751,7 @@ class DNSScannerTUI(App):
             browser = self.query_one("#file-browser-container")
             browser.display = not browser.display
         elif event.button.id == "exit-btn":
-            self.exit()
+            self.action_quit()
         elif event.button.id == "pause-btn":
             self._pause_scan()
         elif event.button.id == "resume-btn":
@@ -726,7 +759,7 @@ class DNSScannerTUI(App):
         elif event.button.id == "save-btn":
             self.action_save_results()
         elif event.button.id == "quit-btn":
-            self.exit()
+            self.action_quit()
 
     def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
         """Handle file selection from directory tree."""
@@ -891,6 +924,10 @@ class DNSScannerTUI(App):
         self.pause_event = asyncio.Event()
         self.pause_event.set()  # Not paused initially
         
+        # Initialize shutdown event for graceful cleanup
+        self._shutdown_event = asyncio.Event()
+        self.active_scan_tasks = []
+        
         # Initialize slipstream parallel testing
         self.slipstream_semaphore = asyncio.Semaphore(self.slipstream_max_concurrent)
         self.available_ports = deque(range(self.slipstream_base_port, self.slipstream_base_port + self.slipstream_max_concurrent))
@@ -948,6 +985,10 @@ class DNSScannerTUI(App):
         chunk_num = 0
         
         async for ip_chunk in self._stream_ips_from_file():
+            # Check for shutdown
+            if self._shutdown_event and self._shutdown_event.is_set():
+                break
+            
             # Check for pause
             await self.pause_event.wait()
             
@@ -958,12 +999,19 @@ class DNSScannerTUI(App):
                 task = asyncio.create_task(self._test_dns_with_callback(ip, sem))
                 active_tasks.append(task)
             
+            # Keep reference for cleanup
+            self.active_scan_tasks = active_tasks
+            
             # Process completed tasks periodically
             if len(active_tasks) >= chunk_size:
                 # Check for pause before processing
                 await self.pause_event.wait()
                 
-                self._log(f"[dim]Processing chunk {chunk_num}...[/dim]")
+                # Check for shutdown
+                if self._shutdown_event and self._shutdown_event.is_set():
+                    break
+                
+                # self._log(f"[dim]Processing chunk {chunk_num}...[/dim]")
                 # Wait for some tasks to complete
                 done, active_tasks = await asyncio.wait(active_tasks, return_when=asyncio.FIRST_COMPLETED)
                 
@@ -972,11 +1020,23 @@ class DNSScannerTUI(App):
                     try:
                         result = await task
                         await self._process_result(result)
+                    except asyncio.CancelledError:
+                        pass  # Task was cancelled during shutdown
                     except Exception as e:
                         logger.error(f"Task error: {e}")
                 
                 active_tasks = list(active_tasks)
+                self.active_scan_tasks = active_tasks
                 await asyncio.sleep(0)  # Yield to UI
+        
+        # Check if we're shutting down
+        if self._shutdown_event and self._shutdown_event.is_set():
+            self._log("[yellow]Scan interrupted - cleaning up...[/yellow]")
+            # Cancel remaining tasks
+            for task in active_tasks:
+                if not task.done():
+                    task.cancel()
+            return
         
         # Wait for all remaining tasks
         self._log("[cyan]Finishing remaining scans...[/cyan]")
@@ -986,20 +1046,44 @@ class DNSScannerTUI(App):
                 try:
                     result = await task
                     await self._process_result(result)
+                except asyncio.CancelledError:
+                    pass  # Task was cancelled
                 except Exception as e:
                     logger.error(f"Task error: {e}")
 
         self._log(f"[cyan]Scan complete. Scanned: {self.current_scanned}, Found: {len(self.found_servers)}[/cyan]")
         logger.info(f"Scan complete. Scanned: {self.current_scanned}, Found: {len(self.found_servers)}")
 
+        # Update final statistics
+        try:
+            stats = self.query_one("#stats", StatsWidget)
+            stats.scanned = self.current_scanned
+            stats.found = len(self.found_servers)
+            elapsed = time.time() - self.start_time
+            stats.elapsed = elapsed
+            stats.speed = self.current_scanned / elapsed if elapsed > 0 else 0
+            stats.total = self.current_scanned  # Set total to actual scanned count
+            
+            progress_bar = self.query_one("#progress-bar", CustomProgressBar)
+            progress_bar.update_progress(self.current_scanned, self.current_scanned)  # Force 100%
+        except Exception:
+            pass
+
         # Final table rebuild
         self._rebuild_table()
         
-        # Wait for all pending slipstream tests to complete
+        # Wait for all pending slipstream tests to complete (with timeout)
         if self.test_slipstream and self.slipstream_tasks:
-            self._log(f"[cyan]Waiting for {len(self.slipstream_tasks)} slipstream tests to complete...[/cyan]")
-            if self.slipstream_tasks:
-                await asyncio.gather(*self.slipstream_tasks, return_exceptions=True)
+            num_tasks = len(self.slipstream_tasks)
+            self._log(f"[cyan]Waiting for {num_tasks} slipstream tests to complete (max 60s)...[/cyan]")
+            try:
+                # Wait maximum 60 seconds for all tests
+                await asyncio.wait_for(
+                    asyncio.gather(*self.slipstream_tasks, return_exceptions=True),
+                    timeout=60.0
+                )
+            except asyncio.TimeoutError:
+                self._log("[yellow]Timeout waiting for slipstream tests - continuing anyway[/yellow]")
             self._rebuild_table()  # Rebuild after all tests complete
         
         # Auto-save results
@@ -1231,22 +1315,18 @@ class DNSScannerTUI(App):
                     # 4 = NODATA (no records found - but DNS is working!)
                     # 3 = NXRRSET (RR type doesn't exist - but DNS is working!)
                     if error_code in (1, 3, 4) and elapsed < 2.0:
-                        logger.debug(f"{ip}: DNS working with error code {error_code} in {elapsed*1000:.0f}ms")
+                        logger.info(f"{ip}: DNS working with error code {error_code} in {elapsed*1000:.0f}ms")
                         return (ip, True, elapsed)
                     elif error_code in (1, 3, 4):
                         # Working but too slow
-                        logger.debug(f"{ip}: DNS working but too slow - {elapsed*1000:.0f}ms")
                         return (ip, False, 0)
                     
                     # Other DNS errors = not a valid/working DNS server
-                    logger.debug(f"{ip}: DNS error code {error_code} - not valid")
                     return (ip, False, 0)
 
             except asyncio.TimeoutError:
-                logger.debug(f"{ip}: Timeout")
                 return (ip, False, 0)
-            except Exception as e:
-                logger.debug(f"{ip}: Exception - {type(e).__name__}: {str(e)[:50]}")
+            except Exception:
                 return (ip, False, 0)
 
     def _add_result(self, ip: str, response_time: float) -> None:
@@ -1390,6 +1470,9 @@ class DNSScannerTUI(App):
             # Build slipstream command with dynamic port using the manager
             cmd = self.slipstream_manager.get_run_command(dns_ip, port, self.slipstream_domain)
             
+            logger.info(f"[{dns_ip}] Starting slipstream on port {port}")
+            logger.debug(f"[{dns_ip}] Command: {' '.join(cmd)}")
+            
             # Start slipstream process
             process = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -1398,26 +1481,50 @@ class DNSScannerTUI(App):
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
             )
             
+            logger.debug(f"[{dns_ip}] Process started with PID {process.pid}")
+            
+            # Track process for cleanup on quit
+            self.slipstream_processes.append(process)
+            
             # Wait for "Connection ready" message (15 second timeout)
             connection_ready = False
             try:
-                async with asyncio.timeout(15):
+                async def wait_for_connection_ready():
+                    nonlocal connection_ready
+                    line_count = 0
                     while True:
                         line = await process.stdout.readline()
                         if not line:
+                            logger.warning(f"[{dns_ip}] Slipstream process ended without output")
                             break
                         
                         line_str = line.decode('utf-8', errors='ignore').strip()
+                        line_count += 1
+                        
+                        # Log every line from slipstream for debugging
+                        logger.debug(f"[{dns_ip}] Slipstream output #{line_count}: {line_str}")
+                        
                         if "Connection ready" in line_str:
                             connection_ready = True
+                            logger.info(f"[{dns_ip}] Connection ready detected on port {port}")
                             self._log(f"[cyan]{dns_ip}: Connection ready on port {port}[/cyan]")
-                            break
+                            return
+                
+                await asyncio.wait_for(wait_for_connection_ready(), timeout=15)
             except asyncio.TimeoutError:
+                logger.warning(f"[{dns_ip}] Slipstream connection timeout after 15s")
                 self._log(f"[yellow]{dns_ip}: Slipstream connection timeout (15s)[/yellow]")
                 return "Failed"
             
             if not connection_ready:
+                logger.error(f"[{dns_ip}] Connection not ready after waiting")
                 return "Failed"
+            
+            # Give slipstream a moment to fully initialize the proxy listener
+            # This prevents race conditions where "Connection ready" is printed
+            # but the proxy isn't quite ready to accept connections yet
+            logger.debug(f"[{dns_ip}] Waiting 1.5s for proxy to fully initialize")
+            await asyncio.sleep(1.5)
             
             # Test the proxy with google.com using dynamic port
             # Mid-high timeout (15 seconds) as requested
@@ -1425,34 +1532,74 @@ class DNSScannerTUI(App):
             test_success = False
             
             # Try HTTP proxy first
+            logger.info(f"[{dns_ip}] Testing HTTP proxy at {proxy_url}")
             try:
+                logger.debug(f"[{dns_ip}] Creating HTTP client with proxy={proxy_url}, timeout=15.0")
                 async with httpx.AsyncClient(
                     proxy=proxy_url,
                     timeout=15.0,  # Mid-high timeout
                     follow_redirects=True
                 ) as client:
+                    logger.debug(f"[{dns_ip}] Sending HTTP GET to http://google.com via proxy")
+                    start_time = time.time()
                     response = await client.get("http://google.com")
+                    elapsed = time.time() - start_time
+                    
+                    # Log detailed response information
+                    logger.debug(f"[{dns_ip}] HTTP response received in {elapsed:.2f}s")
+                    logger.debug(f"[{dns_ip}] HTTP response status: {response.status_code}")
+                    logger.debug(f"[{dns_ip}] HTTP response headers: {dict(response.headers)}")
+                    logger.debug(f"[{dns_ip}] HTTP response URL: {response.url}")
+                    logger.debug(f"[{dns_ip}] HTTP response body preview: {response.text[:200]}")
+                    
                     if response.status_code in (200, 301, 302):
                         test_success = True
+                        logger.info(f"[{dns_ip}] HTTP proxy test PASSED (status {response.status_code}, {elapsed:.2f}s)")
                         self._log(f"[green]{dns_ip}: HTTP proxy test passed (status {response.status_code})[/green]")
-            except Exception:
+                    else:
+                        logger.warning(f"[{dns_ip}] HTTP proxy unexpected status code: {response.status_code}")
+            except Exception as http_err:
+                logger.warning(f"[{dns_ip}] HTTP proxy test failed: {type(http_err).__name__}: {str(http_err)}")
+                logger.debug(f"[{dns_ip}] HTTP error details:", exc_info=True)
+                
                 # Try SOCKS5 proxy
+                logger.info(f"[{dns_ip}] Testing SOCKS5 proxy at 127.0.0.1:{port}")
                 try:
+                    logger.debug(f"[{dns_ip}] Creating SOCKS5 client with proxy=socks5://127.0.0.1:{port}, timeout=15.0")
                     async with httpx.AsyncClient(
                         proxy=f"socks5://127.0.0.1:{port}",
                         timeout=15.0,  # Mid-high timeout
                         follow_redirects=True
                     ) as client:
+                        logger.debug(f"[{dns_ip}] Sending HTTP GET to http://google.com via SOCKS5")
+                        start_time = time.time()
                         response = await client.get("http://google.com")
+                        elapsed = time.time() - start_time
+                        
+                        # Log detailed response information
+                        logger.debug(f"[{dns_ip}] SOCKS5 response received in {elapsed:.2f}s")
+                        logger.debug(f"[{dns_ip}] SOCKS5 response status: {response.status_code}")
+                        logger.debug(f"[{dns_ip}] SOCKS5 response headers: {dict(response.headers)}")
+                        logger.debug(f"[{dns_ip}] SOCKS5 response URL: {response.url}")
+                        logger.debug(f"[{dns_ip}] SOCKS5 response body preview: {response.text[:200]}")
+                        
                         if response.status_code in (200, 301, 302):
                             test_success = True
+                            logger.info(f"[{dns_ip}] SOCKS5 proxy test PASSED (status {response.status_code}, {elapsed:.2f}s)")
                             self._log(f"[green]{dns_ip}: SOCKS5 proxy test passed (status {response.status_code})[/green]")
-                except Exception:
+                        else:
+                            logger.warning(f"[{dns_ip}] SOCKS5 proxy unexpected status code: {response.status_code}")
+                except Exception as socks_err:
+                    logger.error(f"[{dns_ip}] SOCKS5 proxy test failed: {type(socks_err).__name__}: {str(socks_err)}")
+                    logger.debug(f"[{dns_ip}] SOCKS5 error details:", exc_info=True)
                     self._log(f"[red]{dns_ip}: Both HTTP and SOCKS5 proxy tests failed[/red]")
             
-            return "Success" if test_success else "Failed"
+            final_result = "Success" if test_success else "Failed"
+            logger.info(f"[{dns_ip}] Final result: {final_result}")
+            return final_result
             
         except Exception as e:
+            logger.error(f"[{dns_ip}] Slipstream error: {type(e).__name__}: {str(e)}", exc_info=True)
             self._log(f"[red]Slipstream error for {dns_ip}: {str(e)[:50]}[/red]")
             return "Failed"
         finally:
@@ -1461,6 +1608,9 @@ class DNSScannerTUI(App):
                 try:
                     process.kill()
                     await process.wait()
+                    # Remove from tracking list
+                    if process in self.slipstream_processes:
+                        self.slipstream_processes.remove(process)
                 except Exception:
                     pass
     
